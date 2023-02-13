@@ -84,6 +84,7 @@ class _MyAppState extends State<MyApp> {
   _deinitEngine() async {
     await AgoraRtcRawdata.unregisterAudioFrameObserver();
     await AgoraRtcRawdata.unregisterVideoFrameObserver();
+    await engine.leaveChannel();
     await engine.destroy();
   }
 
