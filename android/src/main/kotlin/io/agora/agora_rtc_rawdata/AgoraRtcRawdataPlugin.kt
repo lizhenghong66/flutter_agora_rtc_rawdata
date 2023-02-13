@@ -36,7 +36,7 @@ class AgoraRtcRawdataPlugin : FlutterPlugin, MethodCallHandler {
   private var fuRenderInputData: FURenderInputData? = null
   private var fuRenderOutputData: FURenderOutputData? = null
   private val renderLock = Object()
-  private val renderThread = HandlerThread("fuRenderer")
+  private lateinit var renderThread: HandlerThread
 
   private var fuHandler: Handler? = null
   private class FuHandler(looper: Looper, plugin: AgoraRtcRawdataPlugin) : Handler(looper) {
@@ -59,6 +59,7 @@ class AgoraRtcRawdataPlugin : FlutterPlugin, MethodCallHandler {
     channel = MethodChannel(flutterPluginBinding.binaryMessenger, "agora_rtc_rawdata")
     channel.setMethodCallHandler(this)
 
+    renderThread = HandlerThread("fuRenderer")
     renderThread.start()
     fuHandler = FuHandler(renderThread.looper, this)
     fuHandler!!.sendEmptyMessage(MSG_EGL_CREATE)
@@ -145,6 +146,8 @@ class AgoraRtcRawdataPlugin : FlutterPlugin, MethodCallHandler {
           }
         }
         videoObserver?.registerVideoFrameObserver()
+        fuHandler!!.sendEmptyMessage(MSG_EGL_CREATE)
+
         result.success(null)
       }
       "unregisterVideoFrameObserver" -> {
@@ -162,6 +165,9 @@ class AgoraRtcRawdataPlugin : FlutterPlugin, MethodCallHandler {
 
   override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
     channel.setMethodCallHandler(null)
+
+    fuHandler?.sendEmptyMessage(MSG_EGL_RELEASE)
+    FURenderKit.getInstance().release()
     renderThread.quitSafely()
   }
 

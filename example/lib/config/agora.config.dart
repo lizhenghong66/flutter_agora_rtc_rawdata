@@ -1,4 +1,4 @@
-const appId = '080054a2f84145debc4aeaffbc97fd12';
-const token = '007eJxTYLh/ULLl4usZ+yeG8nEe8uT0P+1dfGzapqx9xsadqmefPLdTYDCwMDAwNUk0SrMwMTQxTUlNSjZJTE1MS0tKtjRPSzE00v3/JLkhkJFhsv5WRkYGCATxORhKUotLjAyMjBkYADMWIgM=';
-const channelId = 'test2023';
+const appId = 'b646785207b84110be190b025b1f4b3c';
+const token = null;
+const channelId = '2021';
 const uid = 0;
