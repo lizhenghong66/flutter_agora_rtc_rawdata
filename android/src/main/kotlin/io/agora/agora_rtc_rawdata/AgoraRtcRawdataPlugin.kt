@@ -40,7 +40,7 @@ class AgoraRtcRawdataPlugin : FlutterPlugin, MethodCallHandler {
   private var fuRenderInputData: FURenderInputData? = null
   private var fuRenderOutputData: FURenderOutputData? = null
   private val renderLock = Object()
-  private val renderThread = HandlerThread("fuRenderer")
+  private lateinit var renderThread: HandlerThread
 
   private var fuHandler: Handler? = null
 
@@ -66,6 +66,7 @@ class AgoraRtcRawdataPlugin : FlutterPlugin, MethodCallHandler {
     channel = MethodChannel(flutterPluginBinding.binaryMessenger, "agora_rtc_rawdata")
     channel.setMethodCallHandler(this)
 
+    renderThread = HandlerThread("fuRenderer")
     renderThread.start()
     fuHandler = FuHandler(renderThread.looper, this)
     fuHandler!!.sendEmptyMessage(MSG_EGL_CREATE)
@@ -73,9 +74,9 @@ class AgoraRtcRawdataPlugin : FlutterPlugin, MethodCallHandler {
   }
 
   override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
-    if (EGL14.eglGetCurrentContext() != EGL14.EGL_NO_CONTEXT || !getSupportGlVersion()){
+    if (EGL14.eglGetCurrentContext() != EGL14.EGL_NO_CONTEXT || !getSupportGlVersion()) {
       result.success(null)
-    }else {
+    } else {
       when (call.method) {
         "registerAudioFrameObserver" -> {
           if (audioObserver == null) {
@@ -150,9 +151,27 @@ class AgoraRtcRawdataPlugin : FlutterPlugin, MethodCallHandler {
                   fuHandler?.sendEmptyMessage(MSG_FACEUNITY)
                   renderLock.wait()
                   videoFrame.apply {
-                    System.arraycopy(fuRenderOutputData!!.image!!.buffer!!, 0, getyBuffer(), 0, getyBuffer().size)
-                    System.arraycopy(fuRenderOutputData!!.image!!.buffer1!!, 0, getuBuffer(), 0, getuBuffer().size)
-                    System.arraycopy(fuRenderOutputData!!.image!!.buffer2!!, 0, getvBuffer(), 0, getvBuffer().size)
+                    System.arraycopy(
+                      fuRenderOutputData!!.image!!.buffer!!,
+                      0,
+                      getyBuffer(),
+                      0,
+                      getyBuffer().size
+                    )
+                    System.arraycopy(
+                      fuRenderOutputData!!.image!!.buffer1!!,
+                      0,
+                      getuBuffer(),
+                      0,
+                      getuBuffer().size
+                    )
+                    System.arraycopy(
+                      fuRenderOutputData!!.image!!.buffer2!!,
+                      0,
+                      getvBuffer(),
+                      0,
+                      getvBuffer().size
+                    )
                   }
                 }
                 return true
@@ -165,16 +184,19 @@ class AgoraRtcRawdataPlugin : FlutterPlugin, MethodCallHandler {
             }
           }
           videoObserver?.registerVideoFrameObserver()
+          fuHandler!!.sendEmptyMessage(MSG_EGL_CREATE)
+
           result.success(null)
         }
         "unregisterVideoFrameObserver" -> {
           videoObserver?.let {
             it.unregisterVideoFrameObserver()
             videoObserver = null
+            fuHandler?.sendEmptyMessage(MSG_EGL_RELEASE)
+            FURenderKit.getInstance().release()
           }
-          result.success(null)
+          else -> result.notImplemented()
         }
-        else -> result.notImplemented()
       }
     }
   }
@@ -183,6 +205,9 @@ class AgoraRtcRawdataPlugin : FlutterPlugin, MethodCallHandler {
     fuHandler?.sendEmptyMessage(MSG_EGL_RELEASE)
     FURenderKit.getInstance().release()
     channel.setMethodCallHandler(null)
+
+    fuHandler?.sendEmptyMessage(MSG_EGL_RELEASE)
+    FURenderKit.getInstance().release()
     renderThread.quitSafely()
   }
 
