@@ -1,5 +1,9 @@
 package io.agora.agora_rtc_rawdata
 
+import android.app.ActivityManager
+import android.content.Context
+import android.content.pm.ConfigurationInfo
+import android.opengl.EGL14
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
@@ -39,6 +43,9 @@ class AgoraRtcRawdataPlugin : FlutterPlugin, MethodCallHandler {
   private val renderThread = HandlerThread("fuRenderer")
 
   private var fuHandler: Handler? = null
+
+  private var context: Context? = null
+
   private class FuHandler(looper: Looper, plugin: AgoraRtcRawdataPlugin) : Handler(looper) {
     private val mPluginWeakReference: WeakReference<AgoraRtcRawdataPlugin> = WeakReference(plugin)
 
@@ -62,105 +69,119 @@ class AgoraRtcRawdataPlugin : FlutterPlugin, MethodCallHandler {
     renderThread.start()
     fuHandler = FuHandler(renderThread.looper, this)
     fuHandler!!.sendEmptyMessage(MSG_EGL_CREATE)
+    context = flutterPluginBinding.applicationContext;
   }
 
   override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
-    when (call.method) {
-      "registerAudioFrameObserver" -> {
-        if (audioObserver == null) {
-          audioObserver = object : IAudioFrameObserver((call.arguments as Number).toLong()) {
-            override fun onRecordAudioFrame(audioFrame: AudioFrame): Boolean {
-              return true
-            }
+    if (EGL14.eglGetCurrentContext() != EGL14.EGL_NO_CONTEXT || !getSupportGlVersion()){
+      result.success(null)
+    }else {
+      when (call.method) {
+        "registerAudioFrameObserver" -> {
+          if (audioObserver == null) {
+            audioObserver = object : IAudioFrameObserver((call.arguments as Number).toLong()) {
+              override fun onRecordAudioFrame(audioFrame: AudioFrame): Boolean {
+                return true
+              }
 
-            override fun onPlaybackAudioFrame(audioFrame: AudioFrame): Boolean {
-              return true
-            }
+              override fun onPlaybackAudioFrame(audioFrame: AudioFrame): Boolean {
+                return true
+              }
 
-            override fun onMixedAudioFrame(audioFrame: AudioFrame): Boolean {
-              return true
-            }
+              override fun onMixedAudioFrame(audioFrame: AudioFrame): Boolean {
+                return true
+              }
 
-            override fun onPlaybackAudioFrameBeforeMixing(uid: Int, audioFrame: AudioFrame): Boolean {
-              return true
+              override fun onPlaybackAudioFrameBeforeMixing(
+                uid: Int,
+                audioFrame: AudioFrame
+              ): Boolean {
+                return true
+              }
             }
           }
+          audioObserver?.registerAudioFrameObserver()
+          result.success(null)
         }
-        audioObserver?.registerAudioFrameObserver()
-        result.success(null)
-      }
-      "unregisterAudioFrameObserver" -> {
-        audioObserver?.let {
-          it.unregisterAudioFrameObserver()
-          audioObserver = null
+        "unregisterAudioFrameObserver" -> {
+          audioObserver?.let {
+            it.unregisterAudioFrameObserver()
+            audioObserver = null
+          }
+          result.success(null)
         }
-        result.success(null)
-      }
-      "registerVideoFrameObserver" -> {
-        if (videoObserver == null) {
-          videoObserver = object : IVideoFrameObserver((call.arguments as Number).toLong()) {
-            override fun onCaptureVideoFrame(videoFrame: VideoFrame): Boolean {
-              /** 这个回调不一定在同一线程执行 */
-              synchronized(renderLock) {
-                if (fuRenderInputData == null) {
-                  fuRenderInputData = FURenderInputData(videoFrame.width, videoFrame.height)
-                }
-                if (fuRenderInputData!!.width != videoFrame.width || fuRenderInputData!!.height != videoFrame.height) {
-                  /** 部分机型前几帧的宽高和后面不同 **/
-                  fuRenderInputData = FURenderInputData(videoFrame.width, videoFrame.height)
-                }
-                fuRenderInputData!!.apply {
-                  imageBuffer = FURenderInputData.FUImageBuffer(FUInputBufferEnum.FU_FORMAT_YUV_BUFFER, videoFrame.getyBuffer(), videoFrame.getuBuffer(), videoFrame.getvBuffer())
-                  renderConfig.apply {
-                    isNeedBufferReturn = true
-                    cameraFacing = if (videoFrame.rotation == 270) CameraFacingEnum.CAMERA_FRONT else CameraFacingEnum.CAMERA_BACK
-                    if (videoFrame.rotation == 270) {
-                      cameraFacing = CameraFacingEnum.CAMERA_FRONT
-                      inputBufferMatrix = FUTransformMatrixEnum.CCROT0_FLIPVERTICAL
-                      inputTextureMatrix = FUTransformMatrixEnum.CCROT0_FLIPVERTICAL
-                      outputMatrix = FUTransformMatrixEnum.CCROT0
-                    }else {
-                      cameraFacing = CameraFacingEnum.CAMERA_BACK
-                      inputBufferMatrix = FUTransformMatrixEnum.CCROT0
-                      inputTextureMatrix = FUTransformMatrixEnum.CCROT0
-                      outputMatrix = FUTransformMatrixEnum.CCROT0_FLIPVERTICAL
+        "registerVideoFrameObserver" -> {
+          if (videoObserver == null) {
+            videoObserver = object : IVideoFrameObserver((call.arguments as Number).toLong()) {
+              override fun onCaptureVideoFrame(videoFrame: VideoFrame): Boolean {
+                /** 这个回调不一定在同一线程执行 */
+                synchronized(renderLock) {
+                  if (fuRenderInputData == null) {
+                    fuRenderInputData = FURenderInputData(videoFrame.width, videoFrame.height)
+                  }
+                  if (fuRenderInputData!!.width != videoFrame.width || fuRenderInputData!!.height != videoFrame.height) {
+                    /** 部分机型前几帧的宽高和后面不同 **/
+                    fuRenderInputData = FURenderInputData(videoFrame.width, videoFrame.height)
+                  }
+                  fuRenderInputData!!.apply {
+                    imageBuffer = FURenderInputData.FUImageBuffer(
+                      FUInputBufferEnum.FU_FORMAT_YUV_BUFFER,
+                      videoFrame.getyBuffer(),
+                      videoFrame.getuBuffer(),
+                      videoFrame.getvBuffer()
+                    )
+                    renderConfig.apply {
+                      isNeedBufferReturn = true
+                      cameraFacing =
+                        if (videoFrame.rotation == 270) CameraFacingEnum.CAMERA_FRONT else CameraFacingEnum.CAMERA_BACK
+                      if (videoFrame.rotation == 270) {
+                        cameraFacing = CameraFacingEnum.CAMERA_FRONT
+                        inputBufferMatrix = FUTransformMatrixEnum.CCROT0_FLIPVERTICAL
+                        inputTextureMatrix = FUTransformMatrixEnum.CCROT0_FLIPVERTICAL
+                        outputMatrix = FUTransformMatrixEnum.CCROT0
+                      } else {
+                        cameraFacing = CameraFacingEnum.CAMERA_BACK
+                        inputBufferMatrix = FUTransformMatrixEnum.CCROT0
+                        inputTextureMatrix = FUTransformMatrixEnum.CCROT0
+                        outputMatrix = FUTransformMatrixEnum.CCROT0_FLIPVERTICAL
+                      }
                     }
                   }
+                  fuHandler?.sendEmptyMessage(MSG_FACEUNITY)
+                  renderLock.wait()
+                  videoFrame.apply {
+                    System.arraycopy(fuRenderOutputData!!.image!!.buffer!!, 0, getyBuffer(), 0, getyBuffer().size)
+                    System.arraycopy(fuRenderOutputData!!.image!!.buffer1!!, 0, getuBuffer(), 0, getuBuffer().size)
+                    System.arraycopy(fuRenderOutputData!!.image!!.buffer2!!, 0, getvBuffer(), 0, getvBuffer().size)
+                  }
                 }
-                fuHandler?.sendEmptyMessage(MSG_FACEUNITY)
-                renderLock.wait()
-                videoFrame.apply {
-                  System.arraycopy(fuRenderOutputData!!.image!!.buffer!!, 0, getyBuffer(), 0, getyBuffer().size)
-                  System.arraycopy(fuRenderOutputData!!.image!!.buffer1!!, 0, getuBuffer(), 0, getuBuffer().size)
-                  System.arraycopy(fuRenderOutputData!!.image!!.buffer2!!, 0, getvBuffer(), 0, getvBuffer().size)
-                }
+                return true
               }
-              return true
-            }
 
-            override fun onRenderVideoFrame(uid: Int, videoFrame: VideoFrame): Boolean {
-              // unsigned char value 255
-              return true
+              override fun onRenderVideoFrame(uid: Int, videoFrame: VideoFrame): Boolean {
+                // unsigned char value 255
+                return true
+              }
             }
           }
+          videoObserver?.registerVideoFrameObserver()
+          result.success(null)
         }
-        videoObserver?.registerVideoFrameObserver()
-        result.success(null)
-      }
-      "unregisterVideoFrameObserver" -> {
-        videoObserver?.let {
-          it.unregisterVideoFrameObserver()
-          videoObserver = null
-          fuHandler?.sendEmptyMessage(MSG_EGL_RELEASE)
-          FURenderKit.getInstance().release()
+        "unregisterVideoFrameObserver" -> {
+          videoObserver?.let {
+            it.unregisterVideoFrameObserver()
+            videoObserver = null
+          }
+          result.success(null)
         }
-        result.success(null)
+        else -> result.notImplemented()
       }
-      else -> result.notImplemented()
     }
   }
 
   override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
+    fuHandler?.sendEmptyMessage(MSG_EGL_RELEASE)
+    FURenderKit.getInstance().release()
     channel.setMethodCallHandler(null)
     renderThread.quitSafely()
   }
@@ -175,5 +196,16 @@ class AgoraRtcRawdataPlugin : FlutterPlugin, MethodCallHandler {
     private const val MSG_FACEUNITY = 0x01
     private const val MSG_EGL_CREATE = 0x02
     private const val MSG_EGL_RELEASE = 0x03
+  }
+
+  fun getSupportGlVersion(): Boolean {
+    if (context != null) {
+      val activityManager: ActivityManager =
+        context!!.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+      val configurationInfo: ConfigurationInfo = activityManager.getDeviceConfigurationInfo()
+      return configurationInfo.reqGlEsVersion >= 0x20000
+    }else {
+      return false
+    }
   }
 }
