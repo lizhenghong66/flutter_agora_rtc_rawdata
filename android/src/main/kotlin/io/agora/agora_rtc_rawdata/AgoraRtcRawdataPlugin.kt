@@ -195,8 +195,8 @@ class AgoraRtcRawdataPlugin : FlutterPlugin, MethodCallHandler {
             fuHandler?.sendEmptyMessage(MSG_EGL_RELEASE)
             FURenderKit.getInstance().release()
           }
-          else -> result.notImplemented()
         }
+        else -> result.notImplemented()
       }
     }
   }
